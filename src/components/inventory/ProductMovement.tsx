@@ -28,6 +28,8 @@ import {
 } from "../ui/dialog";
 import { Label } from "../ui/label";
 import {
+  ArrowDownCircle,
+  ArrowUpCircle,
   ArrowUpDown,
   Calendar,
   Download,
@@ -35,44 +37,46 @@ import {
   Loader2,
   Plus,
   Search,
+  Trash2,
 } from "lucide-react";
 import DashboardHeader from "../dashboard/DashboardHeader";
 import {
   getProducts,
-  getTransactions,
-  addTransaction,
+  getProductMovements,
+  addProductMovement,
+  deleteProductMovement,
   updateProduct,
   type Product,
-  type Transaction,
-  type NewTransaction,
+  type ProductMovement,
+  type NewProductMovement,
 } from "../../lib/db";
 import { toast } from "../ui/use-toast";
 
-interface SalesTransactionsProps {
+interface ProductMovementProps {
   userName?: string;
   userAvatar?: string;
 }
 
-const SalesTransactions: React.FC<SalesTransactionsProps> = ({
+const ProductMovementComponent: React.FC<ProductMovementProps> = ({
   userName = "Dr. Smith",
   userAvatar = "",
 }) => {
-  const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
+  const [movements, setMovements] = useState<ProductMovement[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
-  const [statusFilter, setStatusFilter] = useState("all");
+  const [typeFilter, setTypeFilter] = useState("all");
   const [dateFilter, setDateFilter] = useState("all");
   const [sortField, setSortField] = useState("date");
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("desc");
-  const [isAddTransactionOpen, setIsAddTransactionOpen] = useState(false);
+  const [isAddMovementOpen, setIsAddMovementOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [newTransaction, setNewTransaction] = useState({
+  const [newMovement, setNewMovement] = useState({
     product_id: "",
+    type: "in",
     quantity: 1,
-    amount: 0,
-    customer: "",
-    status: "completed" as "completed" | "pending" | "cancelled",
+    notes: "",
+    date: new Date().toISOString().split("T")[0],
   });
 
   useEffect(() => {
@@ -82,12 +86,12 @@ const SalesTransactions: React.FC<SalesTransactionsProps> = ({
   const fetchData = async () => {
     try {
       setLoading(true);
-      const [productsData, transactionsData] = await Promise.all([
+      const [productsData, movementsData] = await Promise.all([
         getProducts(),
-        getTransactions(),
+        getProductMovements(),
       ]);
       setProducts(productsData);
-      setTransactions(transactionsData);
+      setMovements(movementsData);
     } catch (error) {
       console.error("Error fetching data:", error);
       toast({
@@ -100,36 +104,32 @@ const SalesTransactions: React.FC<SalesTransactionsProps> = ({
     }
   };
 
-  // Filter and sort transactions
-  const filteredTransactions = transactions
-    .filter((transaction) => {
-      const product = products.find((p) => p.id === transaction.product_id);
+  // Filter and sort movements
+  const filteredMovements = movements
+    .filter((movement) => {
+      const product = products.find((p) => p.id === movement.product_id);
       const productName = product ? product.name : "";
 
-      const matchesSearch =
-        productName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        (transaction.customer &&
-          transaction.customer
-            .toLowerCase()
-            .includes(searchQuery.toLowerCase()));
-      const matchesStatus =
-        statusFilter === "all" || transaction.status === statusFilter;
+      const matchesSearch = productName
+        .toLowerCase()
+        .includes(searchQuery.toLowerCase());
+      const matchesType = typeFilter === "all" || movement.type === typeFilter;
 
       let matchesDate = true;
       if (dateFilter === "today") {
         const today = new Date().toISOString().split("T")[0];
-        matchesDate = transaction.date.split("T")[0] === today;
+        matchesDate = movement.date.split("T")[0] === today;
       } else if (dateFilter === "week") {
         const weekAgo = new Date();
         weekAgo.setDate(weekAgo.getDate() - 7);
-        matchesDate = new Date(transaction.date) >= weekAgo;
+        matchesDate = new Date(movement.date) >= weekAgo;
       } else if (dateFilter === "month") {
         const monthAgo = new Date();
         monthAgo.setMonth(monthAgo.getMonth() - 1);
-        matchesDate = new Date(transaction.date) >= monthAgo;
+        matchesDate = new Date(movement.date) >= monthAgo;
       }
 
-      return matchesSearch && matchesStatus && matchesDate;
+      return matchesSearch && matchesType && matchesDate;
     })
     .sort((a, b) => {
       let comparison = 0;
@@ -139,10 +139,10 @@ const SalesTransactions: React.FC<SalesTransactionsProps> = ({
         const productA = products.find((p) => p.id === a.product_id);
         const productB = products.find((p) => p.id === b.product_id);
         comparison = (productA?.name || "").localeCompare(productB?.name || "");
-      } else if (sortField === "amount") {
-        comparison = a.amount - b.amount;
       } else if (sortField === "quantity") {
         comparison = a.quantity - b.quantity;
+      } else if (sortField === "type") {
+        comparison = a.type.localeCompare(b.type);
       }
       return sortDirection === "asc" ? comparison : -comparison;
     });
@@ -156,11 +156,11 @@ const SalesTransactions: React.FC<SalesTransactionsProps> = ({
     }
   };
 
-  const handleAddTransaction = async () => {
+  const handleAddMovement = async () => {
     try {
       setIsSubmitting(true);
 
-      if (!newTransaction.product_id) {
+      if (!newMovement.product_id) {
         toast({
           title: "Error",
           description: "Please select a product",
@@ -170,7 +170,7 @@ const SalesTransactions: React.FC<SalesTransactionsProps> = ({
       }
 
       // Get the current product
-      const product = products.find((p) => p.id === newTransaction.product_id);
+      const product = products.find((p) => p.id === newMovement.product_id);
       if (!product) {
         toast({
           title: "Error",
@@ -180,18 +180,21 @@ const SalesTransactions: React.FC<SalesTransactionsProps> = ({
         return;
       }
 
-      // Check if there's enough stock
-      if (product.stock_level < newTransaction.quantity) {
-        toast({
-          title: "Error",
-          description: `Not enough stock. Only ${product.stock_level} available.`,
-          variant: "destructive",
-        });
-        return;
-      }
-
       // Calculate new stock level
-      const newStockLevel = product.stock_level - newTransaction.quantity;
+      let newStockLevel = product.stock_level;
+      if (newMovement.type === "in") {
+        newStockLevel += newMovement.quantity;
+      } else {
+        newStockLevel -= newMovement.quantity;
+        if (newStockLevel < 0) {
+          toast({
+            title: "Error",
+            description: "Cannot remove more than available stock",
+            variant: "destructive",
+          });
+          return;
+        }
+      }
 
       // Determine new status based on stock level
       let newStatus = "In Stock";
@@ -201,19 +204,15 @@ const SalesTransactions: React.FC<SalesTransactionsProps> = ({
         newStatus = "Low Stock";
       }
 
-      // Create the transaction record
-      const transactionToAdd: NewTransaction = {
-        product_id: newTransaction.product_id,
-        quantity: newTransaction.quantity,
-        amount: newTransaction.amount,
-        customer: newTransaction.customer,
-        status: newTransaction.status,
+      // Create the movement record
+      const movementToAdd: NewProductMovement = {
+        ...newMovement,
         date: new Date().toISOString(),
       };
 
-      // Add the transaction and update the product stock level in parallel
+      // Add the movement and update the product stock level in parallel
       await Promise.all([
-        addTransaction(transactionToAdd),
+        addProductMovement(movementToAdd),
         updateProduct(product.id, {
           stock_level: newStockLevel,
           status: newStatus,
@@ -224,24 +223,24 @@ const SalesTransactions: React.FC<SalesTransactionsProps> = ({
       // Refresh data
       await fetchData();
 
-      setIsAddTransactionOpen(false);
-      setNewTransaction({
+      setIsAddMovementOpen(false);
+      setNewMovement({
         product_id: "",
+        type: "in",
         quantity: 1,
-        amount: 0,
-        customer: "",
-        status: "completed",
+        notes: "",
+        date: new Date().toISOString().split("T")[0],
       });
 
       toast({
         title: "Success",
-        description: "Sale recorded successfully",
+        description: `Product ${newMovement.type === "in" ? "received" : "issued"} successfully`,
       });
     } catch (error) {
-      console.error("Error adding transaction:", error);
+      console.error("Error adding movement:", error);
       toast({
         title: "Error",
-        description: "Failed to record sale. Please try again.",
+        description: "Failed to process movement. Please try again.",
         variant: "destructive",
       });
     } finally {
@@ -249,31 +248,66 @@ const SalesTransactions: React.FC<SalesTransactionsProps> = ({
     }
   };
 
+  const handleDeleteMovement = async (movement: ProductMovement) => {
+    try {
+      // Get the current product
+      const product = products.find((p) => p.id === movement.product_id);
+      if (!product) {
+        toast({
+          title: "Error",
+          description: "Product not found",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      // Calculate new stock level by reversing the movement
+      let newStockLevel = product.stock_level;
+      if (movement.type === "in") {
+        newStockLevel -= movement.quantity;
+        if (newStockLevel < 0) newStockLevel = 0;
+      } else {
+        newStockLevel += movement.quantity;
+      }
+
+      // Determine new status based on stock level
+      let newStatus = "In Stock";
+      if (newStockLevel <= 0) {
+        newStatus = "Out of Stock";
+      } else if (newStockLevel <= 10) {
+        newStatus = "Low Stock";
+      }
+
+      // Delete the movement and update the product stock level in parallel
+      await Promise.all([
+        deleteProductMovement(movement.id),
+        updateProduct(product.id, {
+          stock_level: newStockLevel,
+          status: newStatus,
+          last_updated: new Date().toISOString(),
+        }),
+      ]);
+
+      // Refresh data
+      await fetchData();
+
+      toast({
+        title: "Success",
+        description: "Movement deleted successfully",
+      });
+    } catch (error) {
+      console.error("Error deleting movement:", error);
+      toast({
+        title: "Error",
+        description: "Failed to delete movement. Please try again.",
+        variant: "destructive",
+      });
+    }
+  };
+
   const getProductName = (productId: string) => {
     const product = products.find((p) => p.id === productId);
     return product ? product.name : "Unknown Product";
-  };
-
-  // Calculate product price based on selected product
-  const calculateProductPrice = (productId: string) => {
-    const product = products.find((p) => p.id === productId);
-    if (!product) return 0;
-
-    // This is a simple calculation - in a real app you might have a price field in the product table
-    // or a separate pricing table
-    return product.stock_level > 0
-      ? (product.stock_level * 5) / product.stock_level
-      : 0;
-  };
-
-  // Update amount when product or quantity changes
-  const updateAmount = (productId: string, quantity: number) => {
-    const unitPrice = calculateProductPrice(productId);
-    const amount = unitPrice * quantity;
-    setNewTransaction((prev) => ({
-      ...prev,
-      amount: parseFloat(amount.toFixed(2)),
-    }));
   };
 
   return (
@@ -287,21 +321,21 @@ const SalesTransactions: React.FC<SalesTransactionsProps> = ({
       <div className="flex-1 p-6 overflow-auto">
         <div className="max-w-7xl mx-auto space-y-6">
           <div className="flex justify-between items-center">
-            <h1 className="text-2xl font-bold">Sales Transactions</h1>
+            <h1 className="text-2xl font-bold">Product Movement</h1>
             <Dialog
-              open={isAddTransactionOpen}
-              onOpenChange={setIsAddTransactionOpen}
+              open={isAddMovementOpen}
+              onOpenChange={setIsAddMovementOpen}
             >
               <DialogTrigger asChild>
                 <Button>
-                  <Plus className="mr-2 h-4 w-4" /> Record Sale
+                  <Plus className="mr-2 h-4 w-4" /> Record Movement
                 </Button>
               </DialogTrigger>
               <DialogContent>
                 <DialogHeader>
-                  <DialogTitle>Record New Sale</DialogTitle>
+                  <DialogTitle>Record Product Movement</DialogTitle>
                   <DialogDescription>
-                    Enter the details of the new sales transaction.
+                    Record product receipt or issuance to update inventory.
                   </DialogDescription>
                 </DialogHeader>
                 <div className="grid gap-4 py-4">
@@ -310,14 +344,10 @@ const SalesTransactions: React.FC<SalesTransactionsProps> = ({
                       Product
                     </Label>
                     <Select
-                      value={newTransaction.product_id}
-                      onValueChange={(value) => {
-                        setNewTransaction({
-                          ...newTransaction,
-                          product_id: value,
-                        });
-                        updateAmount(value, newTransaction.quantity);
-                      }}
+                      value={newMovement.product_id}
+                      onValueChange={(value) =>
+                        setNewMovement({ ...newMovement, product_id: value })
+                      }
                     >
                       <SelectTrigger className="col-span-3">
                         <SelectValue placeholder="Select product" />
@@ -332,6 +362,28 @@ const SalesTransactions: React.FC<SalesTransactionsProps> = ({
                     </Select>
                   </div>
                   <div className="grid grid-cols-4 items-center gap-4">
+                    <Label htmlFor="type" className="text-right">
+                      Movement Type
+                    </Label>
+                    <Select
+                      value={newMovement.type}
+                      onValueChange={(value) =>
+                        setNewMovement({
+                          ...newMovement,
+                          type: value as "in" | "out",
+                        })
+                      }
+                    >
+                      <SelectTrigger className="col-span-3">
+                        <SelectValue placeholder="Select type" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="in">Receive (In)</SelectItem>
+                        <SelectItem value="out">Issue (Out)</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="grid grid-cols-4 items-center gap-4">
                     <Label htmlFor="quantity" className="text-right">
                       Quantity
                     </Label>
@@ -339,94 +391,49 @@ const SalesTransactions: React.FC<SalesTransactionsProps> = ({
                       id="quantity"
                       type="number"
                       min="1"
-                      value={newTransaction.quantity}
-                      onChange={(e) => {
-                        const quantity = parseInt(e.target.value) || 1;
-                        setNewTransaction({
-                          ...newTransaction,
-                          quantity,
-                        });
-                        updateAmount(newTransaction.product_id, quantity);
-                      }}
-                      className="col-span-3"
-                    />
-                  </div>
-                  <div className="grid grid-cols-4 items-center gap-4">
-                    <Label htmlFor="amount" className="text-right">
-                      Amount ($)
-                    </Label>
-                    <Input
-                      id="amount"
-                      type="number"
-                      step="0.01"
-                      value={newTransaction.amount}
+                      value={newMovement.quantity}
                       onChange={(e) =>
-                        setNewTransaction({
-                          ...newTransaction,
-                          amount: parseFloat(e.target.value) || 0,
+                        setNewMovement({
+                          ...newMovement,
+                          quantity: parseInt(e.target.value) || 1,
                         })
                       }
                       className="col-span-3"
                     />
                   </div>
                   <div className="grid grid-cols-4 items-center gap-4">
-                    <Label htmlFor="customer" className="text-right">
-                      Customer
+                    <Label htmlFor="notes" className="text-right">
+                      Notes
                     </Label>
                     <Input
-                      id="customer"
-                      value={newTransaction.customer}
+                      id="notes"
+                      value={newMovement.notes}
                       onChange={(e) =>
-                        setNewTransaction({
-                          ...newTransaction,
-                          customer: e.target.value,
+                        setNewMovement({
+                          ...newMovement,
+                          notes: e.target.value,
                         })
                       }
                       className="col-span-3"
                     />
-                  </div>
-                  <div className="grid grid-cols-4 items-center gap-4">
-                    <Label htmlFor="status" className="text-right">
-                      Status
-                    </Label>
-                    <Select
-                      value={newTransaction.status}
-                      onValueChange={(
-                        value: "completed" | "pending" | "cancelled",
-                      ) =>
-                        setNewTransaction({ ...newTransaction, status: value })
-                      }
-                    >
-                      <SelectTrigger className="col-span-3">
-                        <SelectValue placeholder="Select status" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="completed">Completed</SelectItem>
-                        <SelectItem value="pending">Pending</SelectItem>
-                        <SelectItem value="cancelled">Cancelled</SelectItem>
-                      </SelectContent>
-                    </Select>
                   </div>
                 </div>
                 <DialogFooter>
                   <Button
                     variant="outline"
-                    onClick={() => setIsAddTransactionOpen(false)}
+                    onClick={() => setIsAddMovementOpen(false)}
                     disabled={isSubmitting}
                   >
                     Cancel
                   </Button>
-                  <Button
-                    onClick={handleAddTransaction}
-                    disabled={isSubmitting}
-                  >
+                  <Button onClick={handleAddMovement} disabled={isSubmitting}>
                     {isSubmitting ? (
                       <>
                         <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                         Processing...
                       </>
                     ) : (
-                      "Record Sale"
+                      "Record Movement"
                     )}
                   </Button>
                 </DialogFooter>
@@ -439,7 +446,7 @@ const SalesTransactions: React.FC<SalesTransactionsProps> = ({
               <div className="relative flex-1">
                 <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
                 <Input
-                  placeholder="Search by product or customer..."
+                  placeholder="Search by product..."
                   className="pl-10"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
@@ -447,16 +454,15 @@ const SalesTransactions: React.FC<SalesTransactionsProps> = ({
               </div>
               <div className="flex gap-2">
                 <div className="w-40">
-                  <Select value={statusFilter} onValueChange={setStatusFilter}>
+                  <Select value={typeFilter} onValueChange={setTypeFilter}>
                     <SelectTrigger>
                       <Filter className="mr-2 h-4 w-4" />
-                      <SelectValue placeholder="Status" />
+                      <SelectValue placeholder="Type" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="all">All Statuses</SelectItem>
-                      <SelectItem value="completed">Completed</SelectItem>
-                      <SelectItem value="pending">Pending</SelectItem>
-                      <SelectItem value="cancelled">Cancelled</SelectItem>
+                      <SelectItem value="all">All Types</SelectItem>
+                      <SelectItem value="in">Receive (In)</SelectItem>
+                      <SelectItem value="out">Issue (Out)</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -483,7 +489,7 @@ const SalesTransactions: React.FC<SalesTransactionsProps> = ({
             {loading ? (
               <div className="flex justify-center items-center h-64">
                 <Loader2 className="h-8 w-8 animate-spin text-primary" />
-                <span className="ml-2">Loading transactions...</span>
+                <span className="ml-2">Loading data...</span>
               </div>
             ) : (
               <div className="rounded-md border">
@@ -495,7 +501,7 @@ const SalesTransactions: React.FC<SalesTransactionsProps> = ({
                         onClick={() => handleSort("date")}
                       >
                         <div className="flex items-center">
-                          Date
+                          Date & Time
                           {sortField === "date" && (
                             <ArrowUpDown className="ml-2 h-4 w-4" />
                           )}
@@ -514,6 +520,17 @@ const SalesTransactions: React.FC<SalesTransactionsProps> = ({
                       </TableHead>
                       <TableHead
                         className="cursor-pointer"
+                        onClick={() => handleSort("type")}
+                      >
+                        <div className="flex items-center">
+                          Type
+                          {sortField === "type" && (
+                            <ArrowUpDown className="ml-2 h-4 w-4" />
+                          )}
+                        </div>
+                      </TableHead>
+                      <TableHead
+                        className="cursor-pointer"
                         onClick={() => handleSort("quantity")}
                       >
                         <div className="flex items-center">
@@ -523,56 +540,52 @@ const SalesTransactions: React.FC<SalesTransactionsProps> = ({
                           )}
                         </div>
                       </TableHead>
-                      <TableHead
-                        className="cursor-pointer"
-                        onClick={() => handleSort("amount")}
-                      >
-                        <div className="flex items-center">
-                          Amount
-                          {sortField === "amount" && (
-                            <ArrowUpDown className="ml-2 h-4 w-4" />
-                          )}
-                        </div>
-                      </TableHead>
-                      <TableHead>Customer</TableHead>
-                      <TableHead>Status</TableHead>
+                      <TableHead>Notes</TableHead>
+                      <TableHead>Actions</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {filteredTransactions.length === 0 ? (
+                    {filteredMovements.length === 0 ? (
                       <TableRow>
                         <TableCell
                           colSpan={6}
                           className="h-24 text-center text-muted-foreground"
                         >
-                          No transactions found.
+                          No movements found.
                         </TableCell>
                       </TableRow>
                     ) : (
-                      filteredTransactions.map((transaction) => (
-                        <TableRow key={transaction.id}>
+                      filteredMovements.map((movement) => (
+                        <TableRow key={movement.id}>
                           <TableCell>
-                            {new Date(transaction.date).toLocaleDateString()}
+                            {new Date(movement.date).toLocaleString()}
                           </TableCell>
                           <TableCell className="font-medium">
-                            {getProductName(transaction.product_id)}
+                            {getProductName(movement.product_id)}
                           </TableCell>
-                          <TableCell>{transaction.quantity}</TableCell>
-                          <TableCell>
-                            ${transaction.amount.toFixed(2)}
-                          </TableCell>
-                          <TableCell>{transaction.customer}</TableCell>
                           <TableCell>
                             <Badge
-                              variant="outline"
-                              className={`
-                                ${transaction.status === "completed" ? "bg-green-50 text-green-700 border-green-200" : ""}
-                                ${transaction.status === "pending" ? "bg-yellow-50 text-yellow-700 border-yellow-200" : ""}
-                                ${transaction.status === "cancelled" ? "bg-red-50 text-red-700 border-red-200" : ""}
-                              `}
+                              className={`${movement.type === "in" ? "bg-green-100 text-green-800" : "bg-blue-100 text-blue-800"} flex items-center w-fit`}
                             >
-                              {transaction.status}
+                              {movement.type === "in" ? (
+                                <ArrowDownCircle className="mr-1 h-3 w-3" />
+                              ) : (
+                                <ArrowUpCircle className="mr-1 h-3 w-3" />
+                              )}
+                              {movement.type === "in" ? "Received" : "Issued"}
                             </Badge>
+                          </TableCell>
+                          <TableCell>{movement.quantity}</TableCell>
+                          <TableCell>{movement.notes}</TableCell>
+                          <TableCell>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="text-red-500 hover:text-red-700 hover:bg-red-50"
+                              onClick={() => handleDeleteMovement(movement)}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
                           </TableCell>
                         </TableRow>
                       ))
@@ -588,4 +601,4 @@ const SalesTransactions: React.FC<SalesTransactionsProps> = ({
   );
 };
 
-export default SalesTransactions;
+export default ProductMovementComponent;

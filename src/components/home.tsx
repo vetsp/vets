@@ -5,8 +5,10 @@ import InventoryPreview from "./dashboard/InventoryPreview";
 import RecentTransactions from "./dashboard/RecentTransactions";
 import InventoryTrends from "./dashboard/InventoryTrends";
 import ProductInventory from "./inventory/ProductInventory";
+import ProductInventoryDB from "./inventory/ProductInventoryDB";
 import SalesTransactions from "./inventory/SalesTransactions";
 import OperationalSupplies from "./inventory/OperationalSupplies";
+import StockInOut from "./inventory/StockInOut";
 import { Button } from "./ui/button";
 import {
   Package,
@@ -16,6 +18,7 @@ import {
   Settings,
   LogOut,
   LayoutDashboard,
+  ArrowUpDown,
 } from "lucide-react";
 
 interface SidebarItemProps {
@@ -71,6 +74,12 @@ const Sidebar: React.FC<SidebarProps> = ({
           label="Product Inventory"
           active={activeItem === "products"}
           onClick={() => onNavigate("products")}
+        />
+        <SidebarItem
+          icon={<ArrowUpDown className="h-5 w-5" />}
+          label="Stock In/Out"
+          active={activeItem === "stock"}
+          onClick={() => onNavigate("stock")}
         />
         <SidebarItem
           icon={<ShoppingCart className="h-5 w-5" />}
@@ -145,7 +154,11 @@ const Home: React.FC<HomeProps> = ({
           </div>
         );
       case "products":
-        return <ProductInventory userName={userName} userAvatar={userAvatar} />;
+        return (
+          <ProductInventoryDB userName={userName} userAvatar={userAvatar} />
+        );
+      case "stock":
+        return <StockInOut userName={userName} userAvatar={userAvatar} />;
       case "sales":
         return (
           <SalesTransactions userName={userName} userAvatar={userAvatar} />
