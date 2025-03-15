@@ -46,18 +46,23 @@ import {
   type Product,
   type NewProduct,
 } from "../../lib/db";
+import {
+  getProductCategories,
+  type ProductCategory,
+} from "../../lib/productData";
 import { toast } from "../ui/use-toast";
 
-interface ProductInventoryProps {
+interface ProductCatalogProps {
   userName?: string;
   userAvatar?: string;
 }
 
-const ProductInventoryDB: React.FC<ProductInventoryProps> = ({
+const ProductCatalog: React.FC<ProductCatalogProps> = ({
   userName = "Dr. Smith",
   userAvatar = "",
 }) => {
   const [products, setProducts] = useState<Product[]>([]);
+  const [categories, setCategories] = useState<ProductCategory[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [categoryFilter, setCategoryFilter] = useState("all");
@@ -70,6 +75,7 @@ const ProductInventoryDB: React.FC<ProductInventoryProps> = ({
     name: "",
     category: "SALES PRODUCT",
     subcategory: "vitamin",
+    category_id: "",
     stock_level: 0,
     batch_number: "",
     expiry_date: "",
@@ -78,6 +84,7 @@ const ProductInventoryDB: React.FC<ProductInventoryProps> = ({
 
   useEffect(() => {
     fetchProducts();
+    fetchCategories();
   }, []);
 
   const fetchProducts = async () => {
@@ -94,6 +101,27 @@ const ProductInventoryDB: React.FC<ProductInventoryProps> = ({
       });
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchCategories = async () => {
+    try {
+      const data = await getProductCategories();
+      setCategories(data);
+      // Set default category if available
+      if (data.length > 0) {
+        setNewProduct((prev) => ({
+          ...prev,
+          category_id: data[0].id,
+        }));
+      }
+    } catch (error) {
+      console.error("Error fetching categories:", error);
+      toast({
+        title: "Error",
+        description: "Failed to load categories. Please try again.",
+        variant: "destructive",
+      });
     }
   };
 
@@ -159,7 +187,13 @@ const ProductInventoryDB: React.FC<ProductInventoryProps> = ({
       }
 
       const productToAdd: NewProduct = {
-        ...newProduct,
+        name: newProduct.name,
+        category: newProduct.category,
+        subcategory: newProduct.subcategory,
+        category_id: newProduct.category_id,
+        stock_level: newProduct.stock_level,
+        batch_number: newProduct.batch_number,
+        expiry_date: newProduct.expiry_date,
         status,
         last_updated: new Date().toISOString(),
       };
@@ -172,6 +206,7 @@ const ProductInventoryDB: React.FC<ProductInventoryProps> = ({
         name: "",
         category: "SALES PRODUCT",
         subcategory: "vitamin",
+        category_id: categories.length > 0 ? categories[0].id : "",
         stock_level: 0,
         batch_number: "",
         expiry_date: "",
@@ -223,7 +258,7 @@ const ProductInventoryDB: React.FC<ProductInventoryProps> = ({
       <div className="flex-1 p-6 overflow-auto">
         <div className="max-w-7xl mx-auto space-y-6">
           <div className="flex justify-between items-center">
-            <h1 className="text-2xl font-bold">Product Inventory (Database)</h1>
+            <h1 className="text-2xl font-bold">Product Catalog</h1>
             <Dialog open={isAddProductOpen} onOpenChange={setIsAddProductOpen}>
               <DialogTrigger asChild>
                 <Button>
@@ -256,19 +291,20 @@ const ProductInventoryDB: React.FC<ProductInventoryProps> = ({
                       Category
                     </Label>
                     <Select
-                      value={newProduct.category}
+                      value={newProduct.category_id}
                       onValueChange={(value) =>
-                        setNewProduct({ ...newProduct, category: value })
+                        setNewProduct({ ...newProduct, category_id: value })
                       }
                     >
                       <SelectTrigger className="col-span-3">
                         <SelectValue placeholder="Select category" />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="SALES PRODUCT">
-                          SALES PRODUCT
-                        </SelectItem>
-                        <SelectItem value="OPERATION">OPERATION</SelectItem>
+                        {categories.map((category) => (
+                          <SelectItem key={category.id} value={category.id}>
+                            {category.name}
+                          </SelectItem>
+                        ))}
                       </SelectContent>
                     </Select>
                   </div>
@@ -551,4 +587,4 @@ const ProductInventoryDB: React.FC<ProductInventoryProps> = ({
   );
 };
 
-export default ProductInventoryDB;
+export default ProductCatalog;

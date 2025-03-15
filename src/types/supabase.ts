@@ -39,6 +39,30 @@ export type Database = {
         }
         Relationships: []
       }
+      product_categories: {
+        Row: {
+          created_at: string | null
+          description: string | null
+          id: string
+          name: string
+          updated_at: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          description?: string | null
+          id?: string
+          name: string
+          updated_at?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          description?: string | null
+          id?: string
+          name?: string
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
       product_movements: {
         Row: {
           date: string
@@ -78,34 +102,48 @@ export type Database = {
         Row: {
           batch_number: string
           category: string
+          category_id: string | null
           expiry_date: string
           id: string
           last_updated: string | null
           name: string
           status: string
           stock_level: number
+          subcategory: string
         }
         Insert: {
           batch_number: string
           category: string
+          category_id?: string | null
           expiry_date: string
           id?: string
           last_updated?: string | null
           name: string
           status: string
           stock_level: number
+          subcategory?: string
         }
         Update: {
           batch_number?: string
           category?: string
+          category_id?: string | null
           expiry_date?: string
           id?: string
           last_updated?: string | null
           name?: string
           status?: string
           stock_level?: number
+          subcategory?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "products_category_id_fkey"
+            columns: ["category_id"]
+            isOneToOne: false
+            referencedRelation: "product_categories"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       sales_transactions: {
         Row: {
